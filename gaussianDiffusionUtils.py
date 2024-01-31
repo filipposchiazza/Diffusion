@@ -266,21 +266,38 @@ class GaussianDiffusion:
         return model_mean + nonzero_mask * torch.exp(0.5 * model_log_variance) * noise
     
 
-    def save(self, folder):
-        if not os.path.exists(folder):
-            os.makedirs(folder)
+
+    def save(self, save_folder):
+        """Save the Gaussian diffusion utility class.
+
+        Parameters:
+        ----------
+        save_folder: str
+            Folder to save the Gaussian diffusion utility class
+        """
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
         parameters = [self.beta_start,
                       self.beta_end,
                       self.num_timesteps,
                       self.clip_min,
                       self.clip_max]
-        filename = os.path.join(folder, 'gdf_util.pkl')
+        filename = os.path.join(save_folder, 'gdf_util.pkl')
         with open(filename, 'wb') as f:
             pickle.dump(parameters, f)
-        
+
+
+
     @classmethod
-    def load(cls, folder):
-        filename = os.path.join(folder, 'gdf_util.pkl')
+    def load(cls, save_folder):
+        """Load the Gaussian diffusion utility class.
+
+        Parameters:
+        ----------
+        save_folder: str
+            Folder to load the Gaussian diffusion utility class from
+        """
+        filename = os.path.join(save_folder, 'gdf_util.pkl')
         with open(filename, 'rb') as f:
             parameters = pickle.load(f)
         gdf_util = cls(*parameters)
