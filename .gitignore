@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Models
+models/
+*.pt
+*.pkl
