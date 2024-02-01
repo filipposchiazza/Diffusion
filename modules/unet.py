@@ -112,9 +112,12 @@ class Unet(nn.Module):
                                   out_channels=self.img_channels, 
                                   kernel_size=3,
                                   padding='same')
-        
+
+        self.num_trainable_param, self.num_non_trainable_param = self._calculate_num_parameters()    
         
     
+
+
     def forward(self, inputs):
         img, t = inputs
         
@@ -157,8 +160,21 @@ class Unet(nn.Module):
         
         return x
     
+
+
+    def _calculate_num_parameters(self):
+        "Evaluate the number of trainable and non-trainable model parameters"
+        p_total = 0
+        p_train = 0
+        for p in self.parameters():
+            p_total += p.numel()
+            if p.requires_grad:
+                p_train += p.numel()       
+        p_non_train = p_total - p_train
+        return p_train, p_non_train
     
     
+
     def save_model(self, save_folder):
         """Save the parameters and the model state_dict
         
@@ -182,6 +198,26 @@ class Unet(nn.Module):
     
         model_file = os.path.join(save_folder, 'UnetModel.pt')
         torch.save(self.state_dict(), model_file)
+
+
+    
+    @staticmethod
+    def save_history(history, save_folder):
+        """Save the training history
+        
+        Parameters
+        ----------
+        history : dict
+            Training history.
+        save_folder : str
+            Path to the folder where to save the training and validation history.
+            
+        Returns
+        -------
+        None."""
+        filename = os.path.join(save_folder, 'diffusion_history.pkl')
+        with open(filename, 'wb') as f:
+            pickle.dump(history, f)
     
 
 
@@ -204,3 +240,24 @@ class Unet(nn.Module):
         model.load_state_dict(torch.load(model_file, map_location='cuda:0'))
     
         return model
+    
+
+
+    @staticmethod
+    def load_history(save_folder):
+        """Load the training history
+            
+        Parameters
+        ----------
+        save_folder : str
+            Path to the folder where the training history is saved.
+        
+        Returns
+        -------
+        history : dict
+            Training and validation history.
+        """
+        history_file = os.path.join(save_folder, 'diffusion_history.pkl')
+        with open(history_file, 'rb') as f:
+            history = pickle.load(f)
+        return history
