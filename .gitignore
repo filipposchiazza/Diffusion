@@ -8,3 +8,6 @@ __pycache__/
 models/
 *.pt
 *.pkl
+
+# Modules not implemented yet
+train_latent.py
