@@ -11,3 +11,6 @@ models/
 
 # Modules not implemented yet
 train_latent.py
+
+# config file (the template is already in the repo)
+config.py
