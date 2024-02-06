@@ -186,7 +186,7 @@ class LatentDiffusionTrainer(DiffusionTrainer):
                 with torch.no_grad():
                     e = self.pretrained_module.encoder(imgs)
                     _, _, _, _, codes = self.pretrained_module.vq_layer(e)
-                    codes.squeeze_(1)  # add channel dimension
+                    codes.unsqueeze_(1)  # add channel dimension
                     codes = codes * 2 / (self.pretrained_module.num_emb - 1) - 1.0    # from [0, num_emb - 1] to [-1, 1]
 
                 # 1. Get the batch size
@@ -234,7 +234,7 @@ class LatentDiffusionTrainer(DiffusionTrainer):
                 # encode imgs and get codes
                 e = self.pretrained_module.encoder(imgs)
                 _, _, _, _, codes = self.pretrained_module.vq_layer(e)
-                codes.squeeze_(1)  # add channel dimension
+                codes.unsqueeze_(1)  # add channel dimension
                 codes = codes * 2 / (self.pretrained_module.num_emb - 1) - 1.0    # from [0, num_emb - 1] to [-1, 1]
 
                 # 1. Get the batch size
