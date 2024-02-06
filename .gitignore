@@ -9,7 +9,7 @@ models/
 *.pt
 *.pkl
 
-# Modules not implemented yet
+# Modules not implemented yet (or not necessary)
 train_latent.py
 
 # config file (the template is already in the repo)
