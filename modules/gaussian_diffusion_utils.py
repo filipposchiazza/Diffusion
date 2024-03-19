@@ -1,10 +1,11 @@
 import torch
+import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import os
 
 def sigmoid(x):
-    return 1 / (1 + torch.exp(-x))
+    return 1 / (1 + np.exp(-x))
 
 
 class GaussianDiffusion:
@@ -17,7 +18,7 @@ class GaussianDiffusion:
                  beta_end=0.02,
                  clip_min=-1.0,
                  clip_max=1.0,
-                 s=0.08,
+                 s=0.008,
                  img_size=256):
         """Initialize the Gaussian diffusion utility class, according to the specified schedule.
 
@@ -96,6 +97,16 @@ class GaussianDiffusion:
 
     def set_cosine_shifted_schedule(self):
         "Set the shifted cosine schedule for the variance of the noise, according to the image dimension."
+        t = np.linspace(0, 1, self.timesteps)
+        arg = (t+self.s) / (1 + self.s) * np.pi / 2
+        logSNR = -2 * np.log(np.tan(arg)) + 2 * np.log(64 / self.img_size)
+        self.alpha_cumprod = torch.Tensor(sigmoid(logSNR))
+        self.alpha_cumprod_prev = torch.cat((torch.Tensor([1.0]), self.alpha_cumprod[:-1]), dim=0)
+        self.alphas = self.alpha_cumprod / self.alpha_cumprod_prev
+        self.betas = 1 - self.alphas
+    """
+    def set_cosine_shifted_schedule(self):
+        "Set the shifted cosine schedule for the variance of the noise, according to the image dimension."
         t = torch.linspace(start=0.0, end=1.0, steps=self.timesteps)
         arg_num = torch.pi / 2 * (t+self.s)/(1+self.s)
         arg_den = torch.Tensor([self.s / (1 + self.s) * torch.pi / 2])
@@ -107,6 +118,7 @@ class GaussianDiffusion:
         self.alpha_cumprod_prev = torch.cat((torch.Tensor([1.0]), self.alpha_cumprod[:-1]), dim=0)
         self.alphas = self.alpha_cumprod / self.alpha_cumprod_prev
         self.betas = 1 - self.alphas
+    """
 
 
 

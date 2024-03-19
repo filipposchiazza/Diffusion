@@ -7,15 +7,15 @@ from tqdm import tqdm
 class DiffusionTrainer():
 
     def __init__(self, 
-                 unet,
+                 model,   # unet for low-res images, unet for high-res images, uvit for high-res images
                  gdf_util,
                  optimizer,
                  device,
                  verbose=True):
         
-        self.unet = unet.to(device)
+        self.model = model.to(device)
         self.gdf_util = gdf_util
-        self.timesteps = gdf_util.num_timesteps
+        self.timesteps = gdf_util.timesteps
         self.optimizer = optimizer
         self.device = device
         self.verbose = verbose
@@ -34,7 +34,7 @@ class DiffusionTrainer():
         for epoch in range(num_epochs):
             
             # Training mode
-            self.unet.train()
+            self.model.train()
 
             # Train one epoch
             train_loss = self._train_one_epoch(train_dataloader=train_dataloader,
@@ -43,14 +43,15 @@ class DiffusionTrainer():
             # Update history
             history['loss_train'].append(train_loss)
 
-            # Validation mode
-            self.unet.eval()
+            if val_dataloader is not None:
+                # Validation mode
+                self.model.eval()
 
-            # Validate one epoch
-            val_loss = self._validate(val_dataloader=val_dataloader)
+                # Validate one epoch
+                val_loss = self._validate(val_dataloader=val_dataloader)
 
-            # Update history
-            history['loss_val'].append(val_loss)
+                # Update history
+                history['loss_val'].append(val_loss)
         
         return history
 
@@ -86,7 +87,7 @@ class DiffusionTrainer():
                 imgs_t = self.gdf_util.q_sample(imgs, t, noise).to(self.device, dtype=torch.float)
         
                 # 5. Pass the diffused images and time steps to the unet
-                pred_noise = self.unet((imgs_t, t))
+                pred_noise = self.model((imgs_t, t))
                 
                 # 6. Calculate the loss and update the weights
                 loss = F.mse_loss(noise, pred_noise)
@@ -127,7 +128,7 @@ class DiffusionTrainer():
                 imgs_t = self.gdf_util.q_sample(imgs, t, noise).to(self.device, dtype=torch.float)
         
                 # 5. Pass the diffused images and time steps to the unet
-                pred_noise = self.unet((imgs_t, t))
+                pred_noise = self.model((imgs_t, t))
                 
                 # 6. Calculate the loss 
                 loss = F.mse_loss(noise, pred_noise)
@@ -266,57 +267,3 @@ class LatentDiffusionTrainer(DiffusionTrainer):
         return mean_val_loss
 
 
-"""
-def train_one_epoch(train_dataloader, 
-                    unet, 
-                    gdf_utils, 
-                    epoch,
-                    optimizer,
-                    timesteps,
-                    device):
-    running_loss = 0.
-    mean_loss = 0.
-    
-    unet.train()
-    
-    with tqdm(train_dataloader, unit="batches") as tepoch:
-        
-        for i, imgs in enumerate(tepoch):
-            
-            tepoch.set_description(f"Epoch {epoch+1}")
-            
-            # Load images on gpu
-            imgs = imgs.to(device=device, dtype=torch.float)
-            
-            # Zero your gradients for every batch!
-            optimizer.zero_grad()
-        
-            # 1. Get the batch size
-            batch_size = imgs.shape[0]
-        
-            # 2. Sample timesteps uniformely
-            t = torch.randint(low=0, high=timesteps, size=(batch_size, )).to(device)
-        
-            # 3. Sample random noise to be added to the images in the batch
-            noise = torch.randn(size=imgs.shape, dtype=imgs.dtype).to(device)
-            # 4. Diffuse the images with noise
-            imgs_t = gdf_utils.q_sample(imgs, t, noise).to(device, dtype=torch.float)
-        
-            # 5. Pass the diffused images and time steps to the unet
-            pred_noise = unet((imgs_t, t))
-            # 6. Calculate the loss and its gradients
-            loss = F.mse_loss(noise, pred_noise)
-            loss.backward()
-        
-            # 7. Adjust learning weights
-            optimizer.step()
-            
-            # 8. Update running losses and mean losses
-            running_loss += loss.item()
-            mean_loss = running_loss / (i + 1)
-            
-            tepoch.set_postfix(loss="{:.6f}".format(mean_loss))
-    
-
-    return mean_loss
-"""
