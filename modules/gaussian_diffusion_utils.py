@@ -2,19 +2,28 @@ import torch
 import pickle
 import os
 
+def sigmoid(x):
+    return 1 / (1 + torch.exp(-x))
+
+
 class GaussianDiffusion:
     "Gaussian diffusion utility class"
 
     def __init__(self,
+                 schedule,
+                 timesteps=1000,
                  beta_start=1e-4,
                  beta_end=0.02,
-                 timesteps=1000,
                  clip_min=-1.0,
-                 clip_max=1.0):
-        """Initialize the Gaussian diffusion utility class.
+                 clip_max=1.0,
+                 s=0.08,
+                 img_size=256):
+        """Initialize the Gaussian diffusion utility class, according to the specified schedule.
 
         Parameters:
         ----------
+        schedule: str
+            Schedule for the variance of the noise. It can be 'linear', 'cosine', or 'cosine_shifted'.
         beta_start: float
             Starting value of the scheduled variance of the noise
         beta_end: float
@@ -26,46 +35,76 @@ class GaussianDiffusion:
         clip_max: float
             Maximum value of the data
         """
-        
-        self.beta_start = beta_start
-        self.beta_end = beta_end
-        self.num_timesteps = int(timesteps)
+
+        self.num_timesteps = timesteps
         self.clip_min = clip_min
         self.clip_max = clip_max
+        self.img_size = img_size
 
-        # Variance linear schedule definition
-        self.betas = torch.linspace(start=beta_start,
-                                    end=beta_end,
+        if schedule == 'linear':
+            self.beta_start = beta_start
+            self.beta_end = beta_end
+            self.set_linear_schedule()
+        elif schedule == 'cosine':
+            self.s = s
+            self.set_cosine_schedule()
+        elif schedule == 'cosine_shifted':
+            self.s = s
+            self.set_cosine_shifted_schedule()
+
+        # Calculation for diffusion q(x_t | x_{t-1})
+        self.sqrt_alpha_cumprod = torch.sqrt(self.alpha_cumprod)
+        self.sqrt_one_minus_alpha_cumprod = torch.sqrt(1.0 - self.alpha_cumprod)
+        self.log_one_minus_alphas_cumprod = torch.log(1.0 - self.alpha_cumprod)
+        self.sqrt_recip_alphas_cumprod = torch.sqrt(1.0 / self.alpha_cumprod)
+        self.sqrt_recip_m1_alphas_cumprod = torch.sqrt(1.0 / self.alpha_cumprod - 1)
+
+        # Calculation for posterior q(x_{t-1} | x_t, x_0)
+        self.posterior_variance = self.betas * (1.0 - self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)
+        self.posterior_log_variance_clipped = torch.log(torch.maximum(self.posterior_variance, torch.Tensor([1e-20])))
+        self.posterior_mean_coef1 = self.betas * torch.sqrt(self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)
+        self.posterior_mean_coef2 = torch.sqrt(self.alphas) * (1.0 - self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)  
+        
+        
+        
+
+    def set_linear_schedule(self):
+        "Set the linear schedule for the variance of the noise."
+        
+        self.betas = torch.linspace(start=self.beta_start,
+                                    end=self.beta_end,
                                     steps=self.num_timesteps,
                                     dtype=torch.float64)
-        
         self.alphas = 1 - self.betas
         self.alpha_cumprod = torch.cumprod(self.alphas, dim=0)
         self.alpha_cumprod_prev = torch.cat((torch.Tensor([1.0]), self.alpha_cumprod[:-1]), dim=0)
-        
-        
-        # Calculation for diffusion q(x_t | x_{t-1})
-        self.sqrt_alpha_cumprod = torch.sqrt(self.alpha_cumprod)
-        
-        self.sqrt_one_minus_alpha_cumprod = torch.sqrt(1.0 - self.alpha_cumprod)
-        
-        self.log_one_minus_alphas_cumprod = torch.log(1.0 - self.alpha_cumprod)
-        
-        self.sqrt_recip_alphas_cumprod = torch.sqrt(1.0 / self.alpha_cumprod)
-        
-        self.sqrt_recip_m1_alphas_cumprod = torch.sqrt(1.0 / self.alpha_cumprod - 1)
-        
-        
-        # Calculation for posterior q(x_{t-1} | x_t, x_0)
-        self.posterior_variance = self.betas * (1.0 - self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)
-        
-        self.posterior_log_variance_clipped = torch.log(torch.maximum(self.posterior_variance, torch.Tensor([1e-20])))
-        
-        self.posterior_mean_coef1 = self.betas * torch.sqrt(self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)
-        
-        self.posterior_mean_coef2 = torch.sqrt(self.alphas) * (1.0 - self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)
-        
-        
+          
+
+
+    def set_cosine_schedule(self):
+        "Set the cosine schedule for the variance of the noise."
+        t = torch.linspace(start=0.0, end=1.0, steps=self.num_timesteps, dtype=torch.float64)
+        arg = torch.Tensor(torch.pi / 2 * (t+self.s)/(1+self.s))
+        self.alpha_cumprod = torch.cos(arg) ** 2 
+        self.alpha_cumprod_prev = torch.cat((torch.Tensor([1.0]), self.alpha_cumprod[:-1]), dim=0)
+        self.alphas = self.alpha_cumprod / self.alpha_cumprod_prev
+        self.betas = 1 - self.alphas
+
+
+
+    def set_cosine_shifted_schedule(self):
+        "Set the shifted cosine schedule for the variance of the noise, according to the image dimension."
+        t = torch.linspace(start=0.0, end=1.0, steps=self.num_timesteps, dtype=torch.float64)
+        arg = torch.Tensor(torch.pi / 2 * (t+self.s)/(1+self.s))
+        log_SNR = -2 * torch.log(torch.tan(arg))
+        dim_shift_factor = 64 / self.img_size
+        log_SNR_shifted = log_SNR + 2 * torch.log([dim_shift_factor])
+        self.alpha_cumprod = sigmoid(log_SNR_shifted)
+        self.alpha_cumprod_prev = torch.cat((torch.Tensor([1.0]), self.alpha_cumprod[:-1]), dim=0)
+        self.alphas = self.alpha_cumprod / self.alpha_cumprod_prev
+        self.betas = 1 - self.alphas
+
+
 
     def _extract(self, a, t, x_shape):
         """Extract generic coefficients at specified timestep.
