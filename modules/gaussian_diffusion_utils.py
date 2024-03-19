@@ -1,5 +1,6 @@
 import torch
 import pickle
+import matplotlib.pyplot as plt
 import os
 
 def sigmoid(x):
@@ -35,21 +36,20 @@ class GaussianDiffusion:
         clip_max: float
             Maximum value of the data
         """
-
-        self.num_timesteps = timesteps
+        self.schedule = schedule
+        self.timesteps = timesteps
+        self.beta_start = beta_start
+        self.beta_end = beta_end
         self.clip_min = clip_min
         self.clip_max = clip_max
+        self.s = s
         self.img_size = img_size
 
         if schedule == 'linear':
-            self.beta_start = beta_start
-            self.beta_end = beta_end
             self.set_linear_schedule()
         elif schedule == 'cosine':
-            self.s = s
             self.set_cosine_schedule()
         elif schedule == 'cosine_shifted':
-            self.s = s
             self.set_cosine_shifted_schedule()
 
         # Calculation for diffusion q(x_t | x_{t-1})
@@ -66,27 +66,29 @@ class GaussianDiffusion:
         self.posterior_mean_coef2 = torch.sqrt(self.alphas) * (1.0 - self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)  
         
         
-        
 
     def set_linear_schedule(self):
         "Set the linear schedule for the variance of the noise."
         
         self.betas = torch.linspace(start=self.beta_start,
                                     end=self.beta_end,
-                                    steps=self.num_timesteps,
+                                    steps=self.timesteps,
                                     dtype=torch.float64)
         self.alphas = 1 - self.betas
         self.alpha_cumprod = torch.cumprod(self.alphas, dim=0)
         self.alpha_cumprod_prev = torch.cat((torch.Tensor([1.0]), self.alpha_cumprod[:-1]), dim=0)
+        self.one_minus_alpha_cumprod = 1 - self.alpha_cumprod
           
 
 
     def set_cosine_schedule(self):
         "Set the cosine schedule for the variance of the noise."
-        t = torch.linspace(start=0.0, end=1.0, steps=self.num_timesteps, dtype=torch.float64)
-        arg = torch.Tensor(torch.pi / 2 * (t+self.s)/(1+self.s))
-        self.alpha_cumprod = torch.cos(arg) ** 2 
+        t = torch.linspace(start=0.0, end=1.0, steps=self.timesteps, dtype=torch.float64)
+        arg_num = torch.Tensor(torch.pi / 2 * (t+self.s)/(1+self.s))
+        arg_den = torch.Tensor([torch.pi / 2 * (self.s)/(1+self.s)])
+        self.alpha_cumprod = torch.cos(arg_num) ** 2 / torch.cos(arg_den) ** 2
         self.alpha_cumprod_prev = torch.cat((torch.Tensor([1.0]), self.alpha_cumprod[:-1]), dim=0)
+        self.one_minus_alpha_cumprod = 1 - self.alpha_cumprod
         self.alphas = self.alpha_cumprod / self.alpha_cumprod_prev
         self.betas = 1 - self.alphas
 
@@ -94,11 +96,13 @@ class GaussianDiffusion:
 
     def set_cosine_shifted_schedule(self):
         "Set the shifted cosine schedule for the variance of the noise, according to the image dimension."
-        t = torch.linspace(start=0.0, end=1.0, steps=self.num_timesteps, dtype=torch.float64)
-        arg = torch.Tensor(torch.pi / 2 * (t+self.s)/(1+self.s))
-        log_SNR = -2 * torch.log(torch.tan(arg))
-        dim_shift_factor = 64 / self.img_size
-        log_SNR_shifted = log_SNR + 2 * torch.log([dim_shift_factor])
+        t = torch.linspace(start=0.0, end=1.0, steps=self.timesteps)
+        arg_num = torch.pi / 2 * (t+self.s)/(1+self.s)
+        arg_den = torch.Tensor([self.s / (1 + self.s) * torch.pi / 2])
+        f_t = torch.cos(arg_num)
+        f_0 = torch.cos(arg_den)
+        dim_shift_factor = torch.Tensor([64 / self.img_size])
+        log_SNR_shifted = 2 * torch.log(f_t) - torch.log(f_0 ** 2 - f_t ** 2) + 2 * torch.log(dim_shift_factor)
         self.alpha_cumprod = sigmoid(log_SNR_shifted)
         self.alpha_cumprod_prev = torch.cat((torch.Tensor([1.0]), self.alpha_cumprod[:-1]), dim=0)
         self.alphas = self.alpha_cumprod / self.alpha_cumprod_prev
@@ -306,6 +310,16 @@ class GaussianDiffusion:
     
 
 
+    def plot_schedule(self):
+        t = torch.linspace(start=0.0, end=1.0, steps=self.timesteps, dtype=torch.float64)
+        plt.plot(t, self.sqrt_alpha_cumprod, label=r'$\mu_t=\sqrt{\bar{\alpha_t}}$')
+        plt.plot(t, self.sqrt_one_minus_alpha_cumprod, label=r'$\sigma_t=\sqrt{1 - \bar{\alpha_t}}$')
+        plt.title(f'Schedule: {self.schedule}')
+        plt.legend()
+        plt.show()
+
+
+
     def save(self, save_folder):
         """Save the Gaussian diffusion utility class.
 
@@ -316,11 +330,14 @@ class GaussianDiffusion:
         """
         if not os.path.exists(save_folder):
             os.makedirs(save_folder)
-        parameters = [self.beta_start,
+        parameters = [self.schedule,
+                      self.timesteps,
+                      self.beta_start,
                       self.beta_end,
-                      self.num_timesteps,
                       self.clip_min,
-                      self.clip_max]
+                      self.clip_max,
+                      self.s,
+                      self.img_size]
         filename = os.path.join(save_folder, 'gdf_util.pkl')
         with open(filename, 'wb') as f:
             pickle.dump(parameters, f)
